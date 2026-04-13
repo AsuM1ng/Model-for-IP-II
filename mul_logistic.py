@@ -10,12 +10,12 @@ import pandas as pd
 import statsmodels.api as sm
 from tqdm.auto import tqdm
 
-OUTPUT_DIR = Path("analysis_outputs")
+OUTPUT_DIR = Path("outputs/model_analysis")
 TRAIN_PATH = OUTPUT_DIR / "train_set.csv"
 FILTERED_FEATURES_PATH = OUTPUT_DIR / "selected_features_after_correlation.json"
 LOGISTIC_RESULTS_PATH = OUTPUT_DIR / "multivariable_logistic_results.csv"
 INDEPENDENT_FEATURES_PATH = OUTPUT_DIR / "independent_predictors.json"
-TARGET_COLUMN = "PulmonaryInfection"
+TARGET_COLUMN = "IncisionInfection"
 P_VALUE_THRESHOLD = 0.05
 
 
