@@ -92,7 +92,7 @@ def load_article_name_map(path: Path) -> dict[str, str]:
     if not path.exists():
         return {}
     try:
-        article_df = pd.read_excel(path)
+        article_df = read_excel_with_fallback(path)
     except Exception:
         return {}
 
@@ -111,9 +111,32 @@ def load_article_name_map(path: Path) -> dict[str, str]:
             mapping[cn] = en
     return mapping
 
+    mapping: dict[str, str] = {}
+    columns = [str(col) for col in article_df.columns]
+    source_col = next((c for c in columns if "原" in c and "名" in c), None)
+    target_col = next((c for c in columns if ("英文" in c or "变量" in c) and "名" in c), None)
+    if not source_col or not target_col:
+        return {}
 
 def safe_to_datetime(series: pd.Series) -> pd.Series:
     return pd.to_datetime(series.apply(normalize_missing), errors="coerce")
+
+
+def read_excel_with_fallback(path: Path) -> pd.DataFrame:
+    """读取 Excel，优先规避 .xls 依赖 xlrd 导致的导入错误。"""
+    last_error: Exception | None = None
+    for engine in ("openpyxl", None):
+        try:
+            if engine is None:
+                return pd.read_excel(path)
+            return pd.read_excel(path, engine=engine)
+        except Exception as exc:  # noqa: BLE001
+            last_error = exc
+
+    raise ImportError(
+        "读取 .xls 失败：当前环境缺少可用 Excel 引擎。"
+        "请安装 `xlrd>=2.0.1`，或将文件另存为 .xlsx 后重试。"
+    ) from last_error
 
 
 def add_length_of_stay(df: pd.DataFrame) -> pd.DataFrame:
@@ -252,7 +275,7 @@ def build_variable_distribution_table(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def clean_data(read_path: Path = READ_PATH) -> tuple[pd.DataFrame, dict[str, dict[str, int]], pd.DataFrame, pd.DataFrame, str]:
-    df = pd.read_excel(read_path)
+    df = read_excel_with_fallback(read_path)
     df = df.applymap(normalize_missing)
 
     article_map = load_article_name_map(ARTICLE_TABLE_PATH)
