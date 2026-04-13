@@ -136,6 +136,8 @@ def load_article_name_map(path: Path) -> dict[str, str]:
 def safe_to_datetime(series: pd.Series) -> pd.Series:
     return pd.to_datetime(series.apply(normalize_missing), errors="coerce")
 
+def safe_to_datetime(series: pd.Series) -> pd.Series:
+    return pd.to_datetime(series.apply(normalize_missing), errors="coerce")
 
 def read_excel_with_fallback(path: Path) -> pd.DataFrame:
     """读取 Excel，优先规避 .xls 依赖 xlrd 导致的导入错误。"""
@@ -153,6 +155,10 @@ def read_excel_with_fallback(path: Path) -> pd.DataFrame:
         "请安装 `xlrd>=2.0.1`，或将文件另存为 .xlsx 后重试。"
     ) from last_error
 
+    raise ImportError(
+        "读取 .xls 失败：当前环境缺少可用 Excel 引擎。"
+        "请安装 `xlrd>=2.0.1`，或将文件另存为 .xlsx 后重试。"
+    ) from last_error
 
 def add_length_of_stay(df: pd.DataFrame) -> pd.DataFrame:
     if {"AdmissionDate", "DischargeDate"}.issubset(df.columns):
@@ -248,6 +254,12 @@ def encode_categorical_columns(df: pd.DataFrame, numeric_columns: list[str]) -> 
         mappings[col] = mapping
     return df, mappings
 
+def build_group_statistics_table(df: pd.DataFrame, numeric_columns: list[str]) -> pd.DataFrame:
+    if TARGET_COLUMN not in df.columns:
+        return pd.DataFrame()
+    analysis = df[df[TARGET_COLUMN].isin([0, 1])].copy()
+    infected = analysis[analysis[TARGET_COLUMN] == 1]
+    non_infected = analysis[analysis[TARGET_COLUMN] == 0]
 
 def build_group_statistics_table(df: pd.DataFrame, numeric_columns: list[str]) -> pd.DataFrame:
     if TARGET_COLUMN not in df.columns:
