@@ -1,3 +1,5 @@
+"""基于清洗后的数据执行多模型训练与评估（因变量为切口感染）。"""
+
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -47,8 +49,8 @@ plt.rcParams['font.sans-serif'] = ['SimHei']
 plt.rcParams['axes.unicode_minus'] = False
 
 # ========== 加载数据 ==========
-data = pd.read_csv("data1sisclean.csv")
-# data = pd.read_csv("data1.csv")
+data = pd.read_csv("outputs/data_clean/data_cleaned.csv")
+
 features = [
     "OperationDurationMin",
     "PreopConcurrentCRT",
@@ -57,7 +59,7 @@ features = [
     "Tracheostomy"
   ]
 X = data[features]
-y = data['PulmonaryInfection']
+y = data['IncisionInfection']
 seed = 15
 ccvv = 10
 # ========== 分割数据 ==========

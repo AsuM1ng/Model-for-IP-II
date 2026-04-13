@@ -1,3 +1,5 @@
+"""基于清洗后的数据执行多模型训练与评估（因变量为切口感染）。"""
+
 from sklearn.model_selection import StratifiedKFold
 from sklearn.metrics import roc_auc_score
 import pandas as pd
@@ -47,7 +49,7 @@ plt.rcParams['font.sans-serif'] = ['SimHei']
 plt.rcParams['axes.unicode_minus'] = False
 
 # ========== 加载数据 ==========
-data = pd.read_csv("data1.csv")
+data = pd.read_csv("outputs/data_clean/data_cleaned.csv")
 
 features = [
     "PreopConcurrentCRT",
@@ -61,7 +63,7 @@ features = [
 #                        'Intraoperative blood transfusion','Infection status','Preoperative radiotherapy',
 #                        'Preoperative chemotherapy','Preoperative concurrent radiochemotherapy'])
 X = data[features]
-y = data['PulmonaryInfection']
+y = data['IncisionInfection']
 
 min_ratio = 0.0172   # 保持正/负比约束
 min_keep = 2430   # 至少保留样本数（你要求的）
@@ -256,12 +258,12 @@ y_hard_all = pd.concat([y_train_hard, y_test_hard], axis=0)
 X_soft_all = pd.concat([X_train_soft, X_test_soft], axis=0)
 y_soft_all = pd.concat([y_train_soft, y_test_soft], axis=0)
 
-# 确保 y_hard_all 是 Series 且 name 为 'PulmonaryInfection'
+# 确保 y_hard_all 是 Series 且 name 为 'IncisionInfection'
 if isinstance(y_hard_all, pd.Series):
     if y_hard_all.name is None:
-        y_hard_all.name = 'PulmonaryInfection'
+        y_hard_all.name = 'IncisionInfection'
 else:
-    y_hard_all = pd.Series(y_hard_all.values, index=X_hard_all.index, name='PulmonaryInfection')
+    y_hard_all = pd.Series(y_hard_all.values, index=X_hard_all.index, name='IncisionInfection')
 
 # 原始正/负计数（以全 data 为基准）
 orig_pos = int(y.sum())
@@ -326,9 +328,9 @@ y_hard_all = pd.concat([y_train_hard, y_test_hard], axis=0)
 # 保障 y_hard_all 为 Series 且有 name
 if isinstance(y_hard_all, pd.Series):
     if y_hard_all.name is None:
-        y_hard_all.name = 'PulmonaryInfection'
+        y_hard_all.name = 'IncisionInfection'
 else:
-    y_hard_all = pd.Series(y_hard_all.values, index=X_hard_all.index, name='PulmonaryInfection')
+    y_hard_all = pd.Series(y_hard_all.values, index=X_hard_all.index, name='IncisionInfection')
 
 # 计算 hard_score：|pred_prob - true_label|
 # 注意顺序：hard_prob_train 对应 X_train_hard.index 的顺序；hard_prob_test 对应 X_test_hard.index 的顺序
@@ -415,8 +417,8 @@ ca1_cleaned = data.drop(index=hard_index, errors='ignore').copy()
 print(f"\n原始数据总行数: {len(data)}")
 print(f"实际删除行数 (从 data 中)：{len(data) - len(ca1_cleaned)}")
 print(f"清理后保留行数: {len(ca1_cleaned)}")
-print(f"清理后正例数: {int(ca1_cleaned['PulmonaryInfection'].sum())}")
-print(f"清理后负例数: {len(ca1_cleaned) - int(ca1_cleaned['PulmonaryInfection'].sum())}")
+print(f"清理后正例数: {int(ca1_cleaned['IncisionInfection'].sum())}")
+print(f"清理后负例数: {len(ca1_cleaned) - int(ca1_cleaned['IncisionInfection'].sum())}")
 
 # 保存最终完整 CA1（含全部列）
 outname = "data1sisclean.csv"
