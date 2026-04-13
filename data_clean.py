@@ -18,8 +18,8 @@ from typing import Any
 
 import pandas as pd
 
-READ_PATH = Path("数据集.xls")
-ARTICLE_TABLE_PATH = Path("文章表格.xls")
+READ_PATH = Path("数据集.xlsx")
+ARTICLE_TABLE_PATH = Path("文章表格.xlsx")
 OUTPUT_DIR = Path("outputs/data_clean")
 WRITE_PATH = OUTPUT_DIR / "data_cleaned.csv"
 MAPPING_PATH = OUTPUT_DIR / "category_mappings.json"
@@ -31,7 +31,7 @@ FEATURE_MISSING_THRESHOLD = 0.3
 
 COLUMN_RENAME_MAP = {
     "住院次数": "HospitalizationCount",
-    "性别\n（1=男，2=女）": "Sex",
+    "性别": "Sex",
     "年龄": "Age",
     "入院日期": "AdmissionDate",
     "出院日期": "DischargeDate",
@@ -91,9 +91,7 @@ KEEP_COLUMNS = [
 ]
 
 DROP_COLUMNS = [
-    "PulmonaryInfection",
-    "AdmissionDate",
-    "DischargeDate",
+
 ]
 
 
