@@ -111,6 +111,12 @@ def load_article_name_map(path: Path) -> dict[str, str]:
             mapping[cn] = en
     return mapping
 
+    mapping: dict[str, str] = {}
+    columns = [str(col) for col in article_df.columns]
+    source_col = next((c for c in columns if "原" in c and "名" in c), None)
+    target_col = next((c for c in columns if ("英文" in c or "变量" in c) and "名" in c), None)
+    if not source_col or not target_col:
+        return {}
 
 def safe_to_datetime(series: pd.Series) -> pd.Series:
     return pd.to_datetime(series.apply(normalize_missing), errors="coerce")
