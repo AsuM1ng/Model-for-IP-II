@@ -37,6 +37,7 @@ COLUMN_RENAME_MAP = {
     "出院日期": "DischargeDate",
     "BMI": "BMI",
     "BMI分类3": "BMIClass3",
+    "BMI分类2": "BMIClass2",
     "病变部位": "LesionSite",
     "病变部位分类2": "LesionSiteClass2",
     "术前前白蛋白PALB（0=未测）": "PreopPALB",
@@ -68,6 +69,26 @@ PREFERRED_CLASS_COLUMNS = {
     "FlapType": "FlapTypeClass",
     "PreopAntibiotic": "PreopAntibioticClass",
 }
+
+KEEP_COLUMNS = [
+    "Sex",
+    "Age",
+    "BMI",
+    "LesionSite",
+    "PreopPALB",
+    "PreopALB",
+    "PreopHGB",
+    "PreopAntibiotic",
+    "OperationDurationMin",
+    "IntraopTransfusion",
+    "NeckDissection",
+    "PreopConcurrentCRT",
+    "FlapType",
+    "Tracheostomy",
+    "AlcoholHistory",
+    "LengthOfStay",
+    "IncisionInfection",
+]
 
 DROP_COLUMNS = [
     "PulmonaryInfection",
@@ -111,16 +132,12 @@ def load_article_name_map(path: Path) -> dict[str, str]:
             mapping[cn] = en
     return mapping
 
-    mapping: dict[str, str] = {}
-    columns = [str(col) for col in article_df.columns]
-    source_col = next((c for c in columns if "原" in c and "名" in c), None)
-    target_col = next((c for c in columns if ("英文" in c or "变量" in c) and "名" in c), None)
-    if not source_col or not target_col:
-        return {}
 
 def safe_to_datetime(series: pd.Series) -> pd.Series:
     return pd.to_datetime(series.apply(normalize_missing), errors="coerce")
 
+def safe_to_datetime(series: pd.Series) -> pd.Series:
+    return pd.to_datetime(series.apply(normalize_missing), errors="coerce")
 
 def read_excel_with_fallback(path: Path) -> pd.DataFrame:
     """读取 Excel，优先规避 .xls 依赖 xlrd 导致的导入错误。"""
@@ -138,6 +155,10 @@ def read_excel_with_fallback(path: Path) -> pd.DataFrame:
         "请安装 `xlrd>=2.0.1`，或将文件另存为 .xlsx 后重试。"
     ) from last_error
 
+    raise ImportError(
+        "读取 .xls 失败：当前环境缺少可用 Excel 引擎。"
+        "请安装 `xlrd>=2.0.1`，或将文件另存为 .xlsx 后重试。"
+    ) from last_error
 
 def add_length_of_stay(df: pd.DataFrame) -> pd.DataFrame:
     if {"AdmissionDate", "DischargeDate"}.issubset(df.columns):
@@ -153,6 +174,12 @@ def apply_preferred_class_columns(df: pd.DataFrame) -> pd.DataFrame:
         if class_col in df.columns:
             df[raw_col] = df[class_col]
     return df
+
+
+def keep_only_analysis_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """仅保留分析使用字段，并删除冗余列（如 BMIClass2/BMIClass3 原列）。"""
+    keep_cols = [column for column in KEEP_COLUMNS if column in df.columns]
+    return df[keep_cols].copy()
 
 
 def build_data_review_summary(df: pd.DataFrame, target_column: str = TARGET_COLUMN) -> str:
@@ -227,6 +254,12 @@ def encode_categorical_columns(df: pd.DataFrame, numeric_columns: list[str]) -> 
         mappings[col] = mapping
     return df, mappings
 
+def build_group_statistics_table(df: pd.DataFrame, numeric_columns: list[str]) -> pd.DataFrame:
+    if TARGET_COLUMN not in df.columns:
+        return pd.DataFrame()
+    analysis = df[df[TARGET_COLUMN].isin([0, 1])].copy()
+    infected = analysis[analysis[TARGET_COLUMN] == 1]
+    non_infected = analysis[analysis[TARGET_COLUMN] == 0]
 
 def build_group_statistics_table(df: pd.DataFrame, numeric_columns: list[str]) -> pd.DataFrame:
     if TARGET_COLUMN not in df.columns:
@@ -286,6 +319,7 @@ def clean_data(read_path: Path = READ_PATH) -> tuple[pd.DataFrame, dict[str, dic
 
     df = add_length_of_stay(df)
     df = apply_preferred_class_columns(df)
+    df = keep_only_analysis_columns(df)
     df = report_and_drop_high_missing_features(df)
 
     drop_cols = [c for c in DROP_COLUMNS if c in df.columns]
