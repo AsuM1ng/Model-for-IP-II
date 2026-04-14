@@ -99,7 +99,13 @@ PREFERRED_CLASS_COLUMNS = {
     "Surgical Antimicrobial Prophylaxis (SAP)": "SAP Group",
 }
 
-KEEP_COLUMNS = list(COLUMN_RENAME_MAP.values()) + ["LengthOfStay"]
+DEDUPLICATED_CLASS_COLUMNS = set(PREFERRED_CLASS_COLUMNS.values()) | {"BMIClass2"}
+
+KEEP_COLUMNS = [
+    column
+    for column in COLUMN_RENAME_MAP.values()
+    if column not in DEDUPLICATED_CLASS_COLUMNS
+] + ["LengthOfStay"]
 
 DROP_COLUMNS = [
 
