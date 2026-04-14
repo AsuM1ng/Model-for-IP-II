@@ -52,11 +52,10 @@ plt.rcParams['axes.unicode_minus'] = False
 data = pd.read_csv("outputs/data_clean/data_cleaned.csv")
 
 features = [
-    "OperationDurationMin",
+    "PreopPALB",
+    "Tracheostomy",
+    "LesionSite",
     "PreopConcurrentCRT",
-    "NeckDissection",
-    "IntraopTransfusion",
-    "Tracheostomy"
   ]
 X = data[features]
 y = data['IncisionInfection']
