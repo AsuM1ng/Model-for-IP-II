@@ -1,304 +1,293 @@
-"""基于清洗后的数据执行多模型训练与评估（因变量为切口感染）。"""
+from __future__ import annotations
 
-import pandas as pd
-import numpy as np
+"""使用LASSO划分的数据集与多因素Logistic筛选特征进行机器学习建模评估。"""
+
+import json
+from pathlib import Path
+
 import matplotlib.pyplot as plt
-import seaborn as sns
-from sklearn.model_selection import train_test_split, GridSearchCV, cross_val_score
-from sklearn.metrics import roc_auc_score, roc_curve, confusion_matrix, f1_score
-from sklearn.linear_model import LogisticRegression
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.svm import SVC
-from sklearn.neural_network import MLPClassifier
-from sklearn.preprocessing import LabelEncoder, StandardScaler
-import xgboost as xgb
+import numpy as np
+import pandas as pd
 import shap
+import xgboost as xgb
 from imblearn.over_sampling import SMOTE
 from imblearn.pipeline import Pipeline as ImbPipeline
-from sklearn.naive_bayes import GaussianNB
-import joblib
-import warnings
-warnings.filterwarnings("ignore", category=UserWarning)
-
-def plot_shap_aggregated(shap_values, feature_names, model_name):
-    shap_arr = shap_values[1] if isinstance(shap_values, list) else shap_values
-    shap_df = pd.DataFrame(np.abs(shap_arr), columns=feature_names)
-    shap_sum = shap_df.sum()
-    shap_sum_normalized = (shap_sum - shap_sum.min()) / (shap_sum.max() - shap_sum.min())
-    shap_sum = shap_sum.sort_values(ascending=True)
-    plt.figure(figsize=(8, 6))
-    shap_sum.plot(kind='barh')
-    plt.xlabel("SHAP绝对值总和")
-    plt.tight_layout()
-    # plt.xlim(0, 1)
-    plt.show()
-
-def calculate_net_benefit(y_true, y_prob, thresholds):
-    net_benefits = []
-    n = len(y_true)
-    for thresh in thresholds:
-        y_pred = (y_prob >= thresh).astype(int)
-        cm = confusion_matrix(y_true, y_pred)
-        tn, fp, fn, tp = cm.ravel()
-        nb = (tp / n) - (fp / n) * (thresh / (1 - thresh)) if thresh < 1 else 0
-        net_benefits.append(nb)
-    return net_benefits
-
-# 设置 Matplotlib 支持中文显示
-plt.rcParams['font.sans-serif'] = ['SimHei']
-plt.rcParams['axes.unicode_minus'] = False
-
-# ========== 加载数据 ==========
-data = pd.read_csv("outputs/data_clean/data_cleaned.csv")
-
-features = [
-    "Anastomotic fistula",
-    "PALB before surgery",
-    "site",
-    "Unplanned reoperation",
-    "Stage",
-    "Tracheal Fistula",
-    "Endoscopy",
-    "Hormones",
-    "Radiation therapy before surgery",
-    "HBG before surgery"
-  ]
-X = data[features]
-y = data['SSI']
-seed = 42
-ccvv = 10
-# ========== 分割数据 ==========
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=15, stratify=y)
-print(f"\n训练集形状：{X_train.shape}, 测试集形状：{X_test.shape}")
-print("===== 数据标签分布检查 =====")
-label_counts = y_test.value_counts()
-print(f"标签分布：{label_counts.to_dict()}")
-label_counts = y_train.value_counts()
-print(f"标签分布：{label_counts.to_dict()}")
-# features = ['Sex', 'Duration of surgery', 'Postoperative 0-3 days CRP',
-#             'Post-operative admission to ICU', 'Multi-drug resistance']
-# data_train = pd.read_csv("new_train.csv")
-# X_train = data_train[features]
-# y_train = data_train['Infection status']
-# data_test = pd.read_csv("new_test.csv")
-# X_test = data_test[features]
-# y_test = data_test['Infection status']
-
-# ========== 模型定义与参数 ==========
-models = {
-    'GLM': LogisticRegression(class_weight='balanced'),
-    'RF': RandomForestClassifier(class_weight='balanced'),
-    'SVM': SVC(probability=True, class_weight='balanced'),
-    'NNET': MLPClassifier(max_iter=100),
-    # 'NB': GaussianNB()
-}
-
-param_grids = {
-    'GLM': {'classifier__C': [0.1, 1, 10]},
-    'RF': {'classifier__n_estimators': [50, 100], 'classifier__max_depth': [None, 10]},
-    'SVM': {'classifier__C': [0.1, 1], 'classifier__kernel': ['linear', 'rbf']},
-    'NNET': {'classifier__hidden_layer_sizes': [(50,), (100,)], 'classifier__alpha': [0.0001, 0.001]},
-    'NB': {'smote__k_neighbors': [5]}
-}
-
-# ========== 通用模型训练与解释 ==========
-results = {}
-model_probs = {}  # 存储每个模型的预测概率用于DCA
-for name, model in models.items():
-    print(f"\n训练模型：{name}")
-    pipeline = ImbPipeline(steps=[
-        ('scaler', StandardScaler()),
-         ('smote', SMOTE(random_state=seed)),
-        ('classifier', model)
-    ])
-    grid = GridSearchCV(pipeline, param_grids[name], cv=ccvv, scoring='roc_auc', n_jobs=-1)
-    grid.fit(X_train, y_train)
-    best_model = grid.best_estimator_
-
-    y_pred = best_model.predict(X_test)
-    y_prob = best_model.predict_proba(X_test)[:, 1]
-    model_probs[name] = y_prob  # 保存预测概率
-    threshold = 0.5
-    y_pred = (y_prob >= threshold).astype(int)
-    fpr, tpr, _ = roc_curve(y_test, y_prob)
-    auc = roc_auc_score(y_test, y_prob)
-    cv_auc = cross_val_score(best_model, X_train, y_train, cv=ccvv, scoring='roc_auc').mean()
-    cm = confusion_matrix(y_test, y_pred)
-    tn, fp, fn, tp = cm.ravel()
-    sensitivity = tp / (tp + fn) if (tp + fn) > 0 else 0
-    specificity = tn / (tn + fp) if (tn + fp) > 0 else 0
-    accuracy = (tp + tn) / (tp + fp + fn + tn) if (tp + fp + fn + tn) > 0 else 0
-    f1 = f1_score(y_test, y_pred)
-    youden = sensitivity + specificity - 1
-
-    results[name] = {
-        'AUC': auc,
-        'CV_AUC': cv_auc,
-        'Sensitivity': sensitivity,
-        'Specificity': specificity,
-        'Accuracy': accuracy,
-        'F1': f1,
-        'Youden': youden,
-        'fpr': fpr,
-        'tpr': tpr
-    }
-    print(f"{name} - AUC: {auc:.4f}, CV_AUC: {cv_auc:.4f}, 敏感性: {sensitivity:.4f}, "
-          f"特异性: {specificity:.4f}, 准确性: {accuracy:.4f}, F1分数: {f1:.4f}, Youden指数: {youden:.4f}")
-    # # SHAP 分析
-    # X_train_sample = X_train.sample(200, random_state=42)
-    # X_test_sample = X_test.sample(200, random_state=42)
-    # classifier = best_model.named_steps['classifier']
-    #
-    # if name == 'RF':
-    #     explainer = shap.TreeExplainer(classifier, X_train_sample, check_additivity=False)
-    #     shap_values = explainer.shap_values(X_test_sample, check_additivity=False)
-    #     shap.summary_plot(shap_values[1], X_test_sample, plot_type="dot", cmap='coolwarm', show=True)
-    #     plot_shap_aggregated(shap_values, feature_names=X_train.columns, model_name=name)
-    # else:
-    #     explainer = shap.KernelExplainer(lambda x: classifier.predict_proba(x)[:, 1], X_train_sample)
-    #     shap_values = explainer.shap_values(X_test_sample)
-    #     shap.summary_plot(shap_values, X_test_sample, plot_type="dot", cmap='coolwarm', show=True)
-    #     plot_shap_aggregated(shap_values, feature_names=X_train.columns, model_name=name)
-
-# ========== XGBoost 模型（不使用 SMOTE） ==========
-print("\n训练模型：GBM")
-
-neg, pos = np.bincount(y_train)
-xgb_model = xgb.XGBClassifier(
-    use_label_encoder=False,
-    eval_metric='logloss',
-    scale_pos_weight=neg / pos
+from scipy.interpolate import PchipInterpolator
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import (
+    accuracy_score,
+    confusion_matrix,
+    f1_score,
+    roc_auc_score,
+    roc_curve,
 )
-param_grid_xgb = {'colsample_bytree': [0.6], 'learning_rate': [0.01],
-                  'max_depth': [5], 'min_child_weight': [5],
-                  'n_estimators': [50], 'subsample': [0.6]}
-grid = GridSearchCV(xgb_model, param_grid_xgb, cv=ccvv, scoring='roc_auc', n_jobs=-1)
-grid.fit(X_train, y_train)
-clf = grid.best_estimator_
+from sklearn.model_selection import GridSearchCV, cross_val_score
+from sklearn.neural_network import MLPClassifier
+from sklearn.preprocessing import StandardScaler
+from sklearn.svm import SVC
 
-# 使用 XGBoost 模型进行预测
-y_pred = clf.predict(X_test)
-y_prob = clf.predict_proba(X_test)[:, 1]
-model_probs['GBM'] = y_prob  # 保存预测概率
-threshold = 0.4
-y_pred = (y_prob >= threshold).astype(int)
-fpr, tpr, _ = roc_curve(y_test, y_prob)
-auc = roc_auc_score(y_test, y_prob)
-cv_auc = cross_val_score(clf, X_train, y_train, cv=ccvv, scoring='roc_auc').mean()
-cm = confusion_matrix(y_test, y_pred)
-tn, fp, fn, tp = cm.ravel()
-sensitivity = tp / (tp + fn) if (tp + fn) > 0 else 0
-specificity = tn / (tn + fp) if (tn + fp) > 0 else 0
-accuracy = (tp + tn) / (tp + fp + fn + tn) if (tp + fp + fn + tn) > 0 else 0
-f1 = f1_score(y_test, y_pred)
-youden = sensitivity + specificity - 1
+BASE_INPUT_DIR = Path("outputs/model_analysis")
+TRAIN_PATH = BASE_INPUT_DIR / "train_set.csv"
+TEST_PATH = BASE_INPUT_DIR / "test_set.csv"
+FEATURES_PATH = BASE_INPUT_DIR / "independent_predictors.json"
+TARGET_COLUMN = "SSI"
+SEED = 42
+CV_FOLDS = 10
 
-results['GBM'] = {
-    'AUC': auc,
-    'CV_AUC': cv_auc,
-    'Sensitivity': sensitivity,
-    'Specificity': specificity,
-    'Accuracy': accuracy,
-    'F1': f1,
-    'Youden': youden,
-    'fpr': fpr,
-    'tpr': tpr
-}
-print(
-    f"GBM - AUC: {auc:.4f}, CV_AUC: {cv_auc:.4f}, 敏感性: {sensitivity:.4f}, 特异性: {specificity:.4f}, 准确性: {accuracy:.4f}, F1分数: {f1:.4f}, Youden指数: {youden:.4f}")
+OUTPUT_DIR = Path("outputs/ml2")
+METRICS_PATH = OUTPUT_DIR / "model_metrics.csv"
+ROC_PATH = OUTPUT_DIR / "roc_curves_smoothed.png"
+SHAP_SUMMARY_PATH = OUTPUT_DIR / "shap_summary.png"
+SHAP_BAR_PATH = OUTPUT_DIR / "shap_feature_importance_bar.png"
 
 
-def plot_shap_grouped(shap_values, feature_names):
-    # shap_values 转为数组
-    shap_arr = shap_values[1] if isinstance(shap_values, list) else shap_values
+plt.rcParams["font.sans-serif"] = ["SimHei", "Arial Unicode MS", "DejaVu Sans"]
+plt.rcParams["axes.unicode_minus"] = False
 
-    # 计算每个变量 |SHAP| 总和
-    shap_df = pd.DataFrame(np.abs(shap_arr), columns=feature_names)
-    shap_sum = shap_df.sum()
 
-    # 变量分组
-    preoperative_vars = ['Multi-drug resistance', 'Sex', 'ASA']
-    perioperative_vars = ['Duration of surgery', 'Post-operative admission to ICU', 'Postoperative 0-3 days CRP']
+def load_inputs() -> tuple[pd.DataFrame, pd.DataFrame, list[str]]:
+    train_df = pd.read_csv(TRAIN_PATH)
+    test_df = pd.read_csv(TEST_PATH)
+    independent_features = json.loads(FEATURES_PATH.read_text(encoding="utf-8")).get(
+        "independent_predictors", []
+    )
+    if not independent_features:
+        raise ValueError("未在 independent_predictors.json 中找到可用特征。")
 
-    grouped_values = {
-        'Preoperative variables': shap_sum[preoperative_vars].sum(),
-        'Perioperative variables': shap_sum[perioperative_vars].sum()
+    missing_cols = [
+        feature
+        for feature in independent_features + [TARGET_COLUMN]
+        if feature not in train_df.columns or feature not in test_df.columns
+    ]
+    if missing_cols:
+        raise ValueError(f"训练集或测试集缺少字段: {missing_cols}")
+
+    return train_df, test_df, independent_features
+
+
+def prepare_xy(dataframe: pd.DataFrame, features: list[str]) -> tuple[pd.DataFrame, pd.Series]:
+    X = dataframe[features].copy()
+    for col in X.columns:
+        X[col] = pd.to_numeric(X[col], errors="coerce")
+        X[col] = X[col].fillna(X[col].median())
+    y = dataframe[TARGET_COLUMN].astype(int)
+    return X, y
+
+
+def calculate_metrics(y_true: pd.Series, y_prob: np.ndarray, threshold: float = 0.5) -> dict[str, float]:
+    y_pred = (y_prob >= threshold).astype(int)
+    tn, fp, fn, tp = confusion_matrix(y_true, y_pred).ravel()
+    sensitivity = tp / (tp + fn) if (tp + fn) else 0.0
+    specificity = tn / (tn + fp) if (tn + fp) else 0.0
+    return {
+        "AUC": roc_auc_score(y_true, y_prob),
+        "Sensitivity": sensitivity,
+        "Specificity": specificity,
+        "Accuracy": accuracy_score(y_true, y_pred),
+        "F1": f1_score(y_true, y_pred),
+        "Youden": sensitivity + specificity - 1,
     }
 
-    grouped_series = pd.Series(grouped_values)
 
-    # 归一化
-    # grouped_series = (grouped_series - grouped_series.min()) / (grouped_series.max() - grouped_series.min())
+def smooth_roc_curve(fpr: np.ndarray, tpr: np.ndarray, num_points: int = 300) -> tuple[np.ndarray, np.ndarray]:
+    order = np.argsort(fpr)
+    fpr_sorted = fpr[order]
+    tpr_sorted = tpr[order]
 
-    # 画图
-    plt.figure(figsize=(6, 5))
-    grouped_series.sort_values().plot(kind='barh')
-    plt.xlabel("SHAP values|")
+    unique_fpr, unique_indices = np.unique(fpr_sorted, return_index=True)
+    unique_tpr = tpr_sorted[unique_indices]
+
+    if len(unique_fpr) < 3:
+        return fpr_sorted, tpr_sorted
+
+    x_new = np.linspace(0, 1, num_points)
+    interpolator = PchipInterpolator(unique_fpr, unique_tpr, extrapolate=False)
+    y_new = interpolator(x_new)
+    y_new = np.nan_to_num(y_new, nan=0.0)
+    y_new = np.clip(y_new, 0, 1)
+    y_new = np.maximum.accumulate(y_new)
+    y_new[0] = 0.0
+    y_new[-1] = 1.0
+    return x_new, y_new
+
+
+def train_models(X_train: pd.DataFrame, y_train: pd.Series, X_test: pd.DataFrame, y_test: pd.Series) -> tuple[dict, dict, dict]:
+    models = {
+        "GLM": LogisticRegression(class_weight="balanced", max_iter=2000, random_state=SEED),
+        "RF": RandomForestClassifier(class_weight="balanced", random_state=SEED),
+        "SVM": SVC(probability=True, class_weight="balanced", random_state=SEED),
+        "NNET": MLPClassifier(max_iter=1200, random_state=SEED),
+    }
+    param_grids = {
+        "GLM": {"classifier__C": [0.1, 1, 10]},
+        "RF": {"classifier__n_estimators": [100, 200], "classifier__max_depth": [None, 10]},
+        "SVM": {"classifier__C": [0.1, 1], "classifier__kernel": ["linear", "rbf"]},
+        "NNET": {"classifier__hidden_layer_sizes": [(50,), (100,)], "classifier__alpha": [0.0001, 0.001]},
+    }
+
+    metrics_results: dict[str, dict[str, float]] = {}
+    roc_results: dict[str, dict[str, np.ndarray | float]] = {}
+    fitted_models: dict[str, object] = {}
+
+    for name, model in models.items():
+        pipeline = ImbPipeline(
+            steps=[
+                ("scaler", StandardScaler()),
+                ("smote", SMOTE(random_state=SEED)),
+                ("classifier", model),
+            ]
+        )
+        grid = GridSearchCV(
+            pipeline, param_grids[name], cv=CV_FOLDS, scoring="roc_auc", n_jobs=-1
+        )
+        grid.fit(X_train, y_train)
+        best_model = grid.best_estimator_
+        probs = best_model.predict_proba(X_test)[:, 1]
+
+        metrics = calculate_metrics(y_test, probs)
+        metrics["CV_AUC"] = cross_val_score(best_model, X_train, y_train, cv=CV_FOLDS, scoring="roc_auc").mean()
+
+        fpr, tpr, _ = roc_curve(y_test, probs)
+        smoothed_fpr, smoothed_tpr = smooth_roc_curve(fpr, tpr)
+
+        metrics_results[name] = metrics
+        roc_results[name] = {
+            "AUC": metrics["AUC"],
+            "fpr": fpr,
+            "tpr": tpr,
+            "smooth_fpr": smoothed_fpr,
+            "smooth_tpr": smoothed_tpr,
+        }
+        fitted_models[name] = best_model
+
+    neg, pos = np.bincount(y_train)
+    gbm = xgb.XGBClassifier(
+        use_label_encoder=False,
+        eval_metric="logloss",
+        scale_pos_weight=neg / pos,
+        random_state=SEED,
+    )
+    gbm_grid = GridSearchCV(
+        gbm,
+        {
+            "colsample_bytree": [0.6, 0.8],
+            "learning_rate": [0.01, 0.05],
+            "max_depth": [3, 5],
+            "min_child_weight": [3, 5],
+            "n_estimators": [100, 200],
+            "subsample": [0.6, 0.8],
+        },
+        cv=CV_FOLDS,
+        scoring="roc_auc",
+        n_jobs=-1,
+    )
+    gbm_grid.fit(X_train, y_train)
+    gbm_best = gbm_grid.best_estimator_
+    gbm_probs = gbm_best.predict_proba(X_test)[:, 1]
+
+    gbm_metrics = calculate_metrics(y_test, gbm_probs)
+    gbm_metrics["CV_AUC"] = cross_val_score(gbm_best, X_train, y_train, cv=CV_FOLDS, scoring="roc_auc").mean()
+    gbm_fpr, gbm_tpr, _ = roc_curve(y_test, gbm_probs)
+    gbm_smoothed_fpr, gbm_smoothed_tpr = smooth_roc_curve(gbm_fpr, gbm_tpr)
+
+    metrics_results["GBM"] = gbm_metrics
+    roc_results["GBM"] = {
+        "AUC": gbm_metrics["AUC"],
+        "fpr": gbm_fpr,
+        "tpr": gbm_tpr,
+        "smooth_fpr": gbm_smoothed_fpr,
+        "smooth_tpr": gbm_smoothed_tpr,
+    }
+    fitted_models["GBM"] = gbm_best
+
+    return metrics_results, roc_results, fitted_models
+
+
+def save_metrics(metrics_results: dict[str, dict[str, float]]) -> pd.DataFrame:
+    df = pd.DataFrame.from_dict(metrics_results, orient="index").reset_index().rename(columns={"index": "Model"})
+    df = df[["Model", "AUC", "CV_AUC", "Sensitivity", "Specificity", "Accuracy", "F1", "Youden"]]
+    df = df.sort_values("AUC", ascending=False)
+    df.to_csv(METRICS_PATH, index=False, encoding="utf-8-sig")
+    return df
+
+
+def plot_roc_curves(roc_results: dict[str, dict[str, np.ndarray | float]]) -> None:
+    plt.figure(figsize=(10, 8))
+    for name, result in roc_results.items():
+        plt.plot(
+            result["smooth_fpr"],
+            result["smooth_tpr"],
+            linewidth=2,
+            label=f"{name} (AUC={result['AUC']:.3f})",
+        )
+    plt.plot([0, 1], [0, 1], "k--", linewidth=1)
+    plt.xlabel("1 - Specificity")
+    plt.ylabel("Sensitivity")
+    plt.title("Smoothed ROC Curves")
+    plt.legend(loc="lower right")
+    plt.grid(alpha=0.3)
     plt.tight_layout()
-
-    plt.show()
-# SHAP 分析
-explainer = shap.TreeExplainer(clf, X_train, check_additivity=False)
-shap_values = explainer.shap_values(X_test, check_additivity=False)
-shap.summary_plot(shap_values, X_test, plot_type="dot", cmap='coolwarm', show=True)
-plot_shap_aggregated(shap_values, feature_names=X.columns, model_name='GBM')
-plot_shap_grouped(shap_values, feature_names=X.columns)
-
-# # ========== 保存结果到 CSV ==========
-# results_df = pd.DataFrame({
-#     '模型': list(results.keys()),
-#     'AUC': [results[m]['AUC'] for m in results],
-#     'CV_AUC': [results[m]['CV_AUC'] for m in results],
-#     '敏感性': [results[m]['Sensitivity'] for m in results],
-#     '特异性': [results[m]['Specificity'] for m in results],
-#     '准确性': [results[m]['Accuracy'] for m in results],
-#     'F1分数': [results[m]['F1'] for m in results],
-#     'Youden指数': [results[m]['Youden'] for m in results]
-# })
-# # results_df.to_csv('final/result.csv', index=False, encoding='utf-8')
-#
-# from scipy.signal import savgol_filter
-#
-# thresholds = np.linspace(0.01, 0.99, 200)
-#
-# def smooth(values):
-#     return savgol_filter(values, 21, 3)  # window=21, poly=3
-# # ===== 改进版 ROC 曲线 =====
-# plt.figure(figsize=(10, 8))
-# for name, res in results.items():
-#     plt.plot(res['fpr'], res['tpr'], label=f"{name} (AUC = {res['AUC']:.2f})")
-# plt.plot([0, 1], [0, 1], 'k--')
-# plt.xlabel("1 - 特异性")
-# plt.ylabel("敏感性")
-# plt.legend()
-# # plt.savefig('new/roc_curves.png')
-# plt.show()
-
-# # ===== 改进版 DCA 曲线 =====
-# plt.figure(figsize=(8, 6))
-#
-# for name, y_prob in model_probs.items():
-#     nb = calculate_net_benefit(y_test.values, y_prob, thresholds)
-#     nb_s = smooth(nb)
-#     plt.plot(thresholds, nb_s, linewidth=2.0, label=name)
-#
-# # treat-none
-# plt.plot(thresholds, np.zeros_like(thresholds), 'k--', label='Treat None')
-#
-# # treat-all
-# prevalence = y_test.mean()
-# treat_all = thresholds * prevalence - (1 - prevalence) * (thresholds / (1 - thresholds))
-# plt.plot(thresholds, treat_all, 'k:', label='Treat All')
-#
-# plt.xlabel("Threshold Probability", fontsize=12)
-# plt.ylabel("Net Benefit", fontsize=12)
-# plt.title("Decision Curve Analysis", fontsize=14)
-# plt.grid(alpha=0.3)
-# plt.legend()
-# plt.tight_layout()
-# plt.show()
+    plt.savefig(ROC_PATH, dpi=300, bbox_inches="tight")
+    plt.close()
 
 
+def run_shap_analysis(best_model_name: str, best_model: object, X_train: pd.DataFrame, X_test: pd.DataFrame) -> None:
+    model_for_shap = best_model
+    if hasattr(best_model, "named_steps"):
+        model_for_shap = best_model.named_steps["classifier"]
+
+    if best_model_name == "GBM" or best_model_name == "RF":
+        explainer = shap.TreeExplainer(model_for_shap, X_train, check_additivity=False)
+        shap_values = explainer.shap_values(X_test, check_additivity=False)
+    else:
+        background = shap.sample(X_train, min(100, len(X_train)), random_state=SEED)
+        eval_data = shap.sample(X_test, min(200, len(X_test)), random_state=SEED)
+        explainer = shap.KernelExplainer(lambda x: model_for_shap.predict_proba(x)[:, 1], background)
+        shap_values = explainer.shap_values(eval_data)
+        X_test = eval_data
+
+    if isinstance(shap_values, list):
+        shap_values = shap_values[1]
+
+    plt.figure()
+    shap.summary_plot(shap_values, X_test, show=False)
+    plt.tight_layout()
+    plt.savefig(SHAP_SUMMARY_PATH, dpi=300, bbox_inches="tight")
+    plt.close()
+
+    mean_abs = np.abs(shap_values).mean(axis=0)
+    shap_importance = pd.Series(mean_abs, index=X_test.columns).sort_values(ascending=True)
+    plt.figure(figsize=(8, 6))
+    shap_importance.plot(kind="barh", color="#2c7fb8")
+    plt.xlabel("mean(|SHAP value|)")
+    plt.title(f"SHAP Feature Importance ({best_model_name})")
+    plt.tight_layout()
+    plt.savefig(SHAP_BAR_PATH, dpi=300, bbox_inches="tight")
+    plt.close()
 
 
+def main() -> None:
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
+    train_df, test_df, features = load_inputs()
+    X_train, y_train = prepare_xy(train_df, features)
+    X_test, y_test = prepare_xy(test_df, features)
+
+    metrics_results, roc_results, fitted_models = train_models(X_train, y_train, X_test, y_test)
+    metrics_df = save_metrics(metrics_results)
+    plot_roc_curves(roc_results)
+
+    best_model_name = str(metrics_df.iloc[0]["Model"])
+    run_shap_analysis(best_model_name, fitted_models[best_model_name], X_train, X_test)
+
+    print("=== ML2建模完成 ===")
+    print(f"使用特征: {features}")
+    print(metrics_df.to_string(index=False))
+    print(f"评估指标文件: {METRICS_PATH}")
+    print(f"ROC图文件: {ROC_PATH}")
+    print(f"SHAP图文件: {SHAP_SUMMARY_PATH}, {SHAP_BAR_PATH}")
+
+
+if __name__ == "__main__":
+    main()
