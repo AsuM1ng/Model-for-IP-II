@@ -16,7 +16,7 @@ from sklearn.preprocessing import StandardScaler
 from tqdm.auto import tqdm
 
 DATA_PATH = Path("outputs/data_clean/data_cleaned.csv")
-TARGET_COLUMN = "IncisionInfection"
+TARGET_COLUMN = "SSI"
 TEST_SIZE = 0.3
 RANDOM_STATE = 42
 CORRELATION_THRESHOLD = 0.6

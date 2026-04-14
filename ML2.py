@@ -28,7 +28,7 @@ def plot_shap_aggregated(shap_values, feature_names, model_name):
     shap_sum = shap_sum.sort_values(ascending=True)
     plt.figure(figsize=(8, 6))
     shap_sum.plot(kind='barh')
-    plt.xlabel("SHA绝对值总和")
+    plt.xlabel("SHAP绝对值总和")
     plt.tight_layout()
     # plt.xlim(0, 1)
     plt.show()
@@ -52,14 +52,20 @@ plt.rcParams['axes.unicode_minus'] = False
 data = pd.read_csv("outputs/data_clean/data_cleaned.csv")
 
 features = [
-    "PreopPALB",
-    "Tracheostomy",
-    "LesionSite",
-    "PreopConcurrentCRT",
+    "Anastomotic fistula",
+    "PALB before surgery",
+    "site",
+    "Unplanned reoperation",
+    "Stage",
+    "Tracheal Fistula",
+    "Endoscopy",
+    "Hormones",
+    "Radiation therapy before surgery",
+    "HBG before surgery"
   ]
 X = data[features]
-y = data['IncisionInfection']
-seed = 15
+y = data['SSI']
+seed = 42
 ccvv = 10
 # ========== 分割数据 ==========
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=15, stratify=y)

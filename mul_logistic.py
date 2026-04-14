@@ -15,7 +15,7 @@ TRAIN_PATH = OUTPUT_DIR / "train_set.csv"
 FILTERED_FEATURES_PATH = OUTPUT_DIR / "selected_features_after_correlation.json"
 LOGISTIC_RESULTS_PATH = OUTPUT_DIR / "multivariable_logistic_results.csv"
 INDEPENDENT_FEATURES_PATH = OUTPUT_DIR / "independent_predictors.json"
-TARGET_COLUMN = "IncisionInfection"
+TARGET_COLUMN = "SSI"
 P_VALUE_THRESHOLD = 0.05
 
 

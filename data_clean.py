@@ -31,7 +31,7 @@ FEATURE_MISSING_THRESHOLD = 0.3
 
 COLUMN_RENAME_MAP = {
     "性别": "Sex",
-    "年龄": "Age,years",
+    "年龄": "Age",
     "BMI": "BMI",
     "既往头颈部疾病手术外伤史（0无，1有）": "HeadNeckSurgeryTraumaHistory",
     "冠心病（0无，1有）": "Coronary heart disease",
@@ -87,7 +87,7 @@ COLUMN_RENAME_MAP = {
 
 
 PREFERRED_CLASS_COLUMNS = {
-    "Age,years": "Age Group",
+    "Age": "Age Group",
     "BMI": "BMI Group",
     "ASA": "ASA Group",
     "Preoperative Oropharyngeal Swab": "Preoperative Oropharyngeal Swab Group",
