@@ -131,6 +131,7 @@ def train_models(X_train: pd.DataFrame, y_train: pd.Series, X_test: pd.DataFrame
     fitted_models: dict[str, object] = {}
 
     for name, model in models.items():
+        print(f"\n开始训练模型: {name}")
         pipeline = ImbPipeline(
             steps=[
                 ("scaler", StandardScaler()),
@@ -160,8 +161,16 @@ def train_models(X_train: pd.DataFrame, y_train: pd.Series, X_test: pd.DataFrame
             "smooth_tpr": smoothed_tpr,
         }
         fitted_models[name] = best_model
+        print(
+            f"{name} 训练完成 | "
+            f"Best Params: {grid.best_params_} | "
+            f"AUC={metrics['AUC']:.4f}, CV_AUC={metrics['CV_AUC']:.4f}, "
+            f"Sensitivity={metrics['Sensitivity']:.4f}, Specificity={metrics['Specificity']:.4f}, "
+            f"Accuracy={metrics['Accuracy']:.4f}, F1={metrics['F1']:.4f}, Youden={metrics['Youden']:.4f}"
+        )
 
     neg, pos = np.bincount(y_train)
+    print("\n开始训练模型: GBM")
     gbm = xgb.XGBClassifier(
         use_label_encoder=False,
         eval_metric="logloss",
@@ -200,6 +209,13 @@ def train_models(X_train: pd.DataFrame, y_train: pd.Series, X_test: pd.DataFrame
         "smooth_tpr": gbm_smoothed_tpr,
     }
     fitted_models["GBM"] = gbm_best
+    print(
+        f"GBM 训练完成 | "
+        f"Best Params: {gbm_grid.best_params_} | "
+        f"AUC={gbm_metrics['AUC']:.4f}, CV_AUC={gbm_metrics['CV_AUC']:.4f}, "
+        f"Sensitivity={gbm_metrics['Sensitivity']:.4f}, Specificity={gbm_metrics['Specificity']:.4f}, "
+        f"Accuracy={gbm_metrics['Accuracy']:.4f}, F1={gbm_metrics['F1']:.4f}, Youden={gbm_metrics['Youden']:.4f}"
+    )
 
     return metrics_results, roc_results, fitted_models
 
@@ -238,8 +254,8 @@ def run_shap_analysis(best_model_name: str, best_model: object, X_train: pd.Data
         model_for_shap = best_model.named_steps["classifier"]
 
     if best_model_name == "GBM" or best_model_name == "RF":
-        explainer = shap.TreeExplainer(model_for_shap, X_train, check_additivity=False)
-        shap_values = explainer.shap_values(X_test, check_additivity=False)
+        explainer = shap.TreeExplainer(model_for_shap, X_train)
+        shap_values = explainer.shap_values(X_test)
     else:
         background = shap.sample(X_train, min(100, len(X_train)), random_state=SEED)
         eval_data = shap.sample(X_test, min(200, len(X_test)), random_state=SEED)
