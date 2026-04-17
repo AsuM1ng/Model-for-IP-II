@@ -104,14 +104,45 @@ def correlation_filter(X_train: pd.DataFrame, coefficient_df: pd.DataFrame) -> t
     return final_features, corr_matrix.loc[selected_features, selected_features], removed_pairs
 
 
+# def save_heatmap(corr_matrix: pd.DataFrame) -> None:
+#     plt.figure(figsize=(max(8, 0.7 * len(corr_matrix.columns)), max(6, 0.7 * len(corr_matrix.columns))))
+#     sns.heatmap(corr_matrix, cmap="coolwarm", center=0, annot=True, fmt=".2f", square=True)
+#     plt.title("Spearman Correlation Heatmap for LASSO-selected Features")
+#     plt.tight_layout()
+#     plt.savefig(CORRELATION_HEATMAP_PATH, dpi=300, bbox_inches="tight")
+#     plt.close()
+
 def save_heatmap(corr_matrix: pd.DataFrame) -> None:
-    plt.figure(figsize=(max(8, 0.7 * len(corr_matrix.columns)), max(6, 0.7 * len(corr_matrix.columns))))
-    sns.heatmap(corr_matrix, cmap="coolwarm", center=0, annot=True, fmt=".2f", square=True)
-    plt.title("Spearman Correlation Heatmap for LASSO-selected Features")
+    plt.figure(figsize=(max(8, 0.7 * len(corr_matrix.columns)),
+                        max(6, 0.7 * len(corr_matrix.columns))))
+
+    sns.heatmap(
+        corr_matrix,
+        cmap="coolwarm",
+        center=0,
+        annot=True,  # 👉 关闭单元格数值
+        fmt=".2f",
+        square=True,
+        annot_kws = {"size": 10}  # 👉 单元格数值字体
+    )
+
+    plt.title("Spearman Correlation Heatmap for LASSO-selected Features", fontsize=20)
+
+    # 👉 横轴标签优化（核心）
+    plt.xticks(
+        ticks=range(len(corr_matrix.columns)),
+        labels=corr_matrix.columns,
+        rotation=45,  # 倾斜避免重叠
+        ha="right",  # 右对齐更紧凑
+        fontsize=16
+    )
+
+    # 👉 纵轴标签
+    plt.yticks(fontsize=16, rotation=0)
+
     plt.tight_layout()
     plt.savefig(CORRELATION_HEATMAP_PATH, dpi=300, bbox_inches="tight")
     plt.close()
-
 
 def save_outputs(full_data: pd.DataFrame, X_train: pd.DataFrame, X_test: pd.DataFrame, y_train: pd.Series, y_test: pd.Series, coefficient_df: pd.DataFrame, final_features: list[str], corr_matrix: pd.DataFrame, removed_pairs: list[dict[str, float | str]]) -> None:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)

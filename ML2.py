@@ -32,7 +32,7 @@ TRAIN_PATH = BASE_INPUT_DIR / "train_set.csv"
 TEST_PATH = BASE_INPUT_DIR / "test_set.csv"
 FEATURES_PATH = BASE_INPUT_DIR / "independent_predictors.json"
 TARGET_COLUMN = "SSI"
-SEED = 42
+SEED = 15
 CV_FOLDS = 10
 
 OUTPUT_DIR = Path("outputs/ml2")
@@ -115,13 +115,31 @@ def smooth_roc_curve(fpr: np.ndarray, tpr: np.ndarray, num_points: int = 300) ->
 def train_models(X_train: pd.DataFrame, y_train: pd.Series, X_test: pd.DataFrame, y_test: pd.Series) -> tuple[dict, dict, dict]:
     models = {
         "GLM": LogisticRegression(class_weight="balanced", max_iter=2000, random_state=SEED),
-        "RF": RandomForestClassifier(class_weight="balanced", random_state=SEED),
+        "RF": RandomForestClassifier(
+            n_estimators=300,
+            max_depth=10,
+            min_samples_leaf=2,
+            class_weight={0:1, 1:3},
+            random_state=SEED
+        ),
         "SVM": SVC(probability=True, class_weight="balanced", random_state=SEED),
-        "NNET": MLPClassifier(max_iter=1200, random_state=SEED),
+        "NNET": MLPClassifier(
+            hidden_layer_sizes=(100, 50),
+            alpha=0.001,
+            learning_rate_init=0.001,
+            max_iter=2000,
+            early_stopping=True,
+            random_state=SEED
+        ),
     }
     param_grids = {
         "GLM": {"classifier__C": [0.1, 1, 10]},
-        "RF": {"classifier__n_estimators": [100, 200], "classifier__max_depth": [None, 10]},
+        "RF": {
+            "classifier__n_estimators": [200, 300],
+            "classifier__max_depth": [5, 10, None],
+            "classifier__min_samples_split": [2, 5, 10],
+            "classifier__min_samples_leaf": [1, 2, 4],
+            "classifier__max_features": ["sqrt", 0.8]},
         "SVM": {"classifier__C": [0.1, 1], "classifier__kernel": ["linear", "rbf"]},
         "NNET": {"classifier__hidden_layer_sizes": [(50,), (100,)], "classifier__alpha": [0.0001, 0.001]},
     }
